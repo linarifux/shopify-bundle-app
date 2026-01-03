@@ -1,130 +1,125 @@
 import shopify, { getSession } from '../shopifyConfig.js';
 import { BUNDLE_RECIPES, COMPONENT_IDS } from '../inventoryConfig.js';
 
-// --- EXISTING: Fetch Orders (for viewing) ---
+// --- PART A: View Orders (Browser) ---
 export const getAllOrders = async (req, res) => {
   try {
     const session = await getSession();
     const client = new shopify.clients.Rest({ session });
-    const response = await client.get({ path: 'orders', query: { status: 'any', limit: 50, fields: 'id,name,created_at,line_items,financial_status' } });
-    
-    res.status(200).json({ count: response.body.orders.length, data: response.body.orders });
+    const response = await client.get({
+      path: 'orders',
+      query: { status: 'any', limit: 20, fields: 'id,name,created_at,line_items' }
+    });
+    res.status(200).json(response.body.orders);
   } catch (error) {
-    console.error('Error fetching orders:', error);
     res.status(500).json({ error: error.message });
   }
 };
 
-// --- NEW: Automation Logic (Triggered by Webhook) ---
+// --- PART B: Automation Logic (Webhook) ---
 export const handleOrderCreated = async (req, res) => {
   try {
-    console.log(`\n📦 Order Received: ${req.body.name || 'Unknown'}`);
-    
+    console.log(`\n📦 New Order Received: ${req.body.name}`);
+    const order = req.body;
     const session = await getSession();
     const client = new shopify.clients.Rest({ session });
-    const order = req.body;
-    
-    // We need the Location ID to deduct stock (usually the primary location)
-    // For this code, we fetch the first active location.
-    const locations = await client.get({ path: 'locations' });
-    const locationId = locations.body.locations[0].id;
 
-    let componentsUsed = [];
+    // 1. Get Location ID (Required for updates)
+    const locResponse = await client.get({ path: 'locations' });
+    const locationId = locResponse.body.locations[0].id;
+
     let bundlesFound = false;
+    let noteUpdates = [];
 
-    // 1. DEDUCT COMPONENTS
-    for (const lineItem of order.line_items) {
-      const recipe = BUNDLE_RECIPES[lineItem.sku];
+    // 2. Loop through items sold
+    for (const item of order.line_items) {
+      const recipe = BUNDLE_RECIPES[item.sku];
 
+      // If item is a Bundle
       if (recipe) {
         bundlesFound = true;
-        console.log(`   - Bundle Found: ${lineItem.sku} (Qty: ${lineItem.quantity})`);
+        console.log(`   👉 Bundle Sold: ${item.sku} (Qty: ${item.quantity})`);
 
-        for (const component of recipe.items) {
-          const qtyToDeduct = component.qty * lineItem.quantity;
+        for (const comp of recipe.components) {
+          const deductQty = comp.qty * item.quantity;
           
-          // Add to list for Order Note
-          componentsUsed.push(`${qtyToDeduct}x ${component.name}`);
-
-          // Execute Deduction in Shopify
-          console.log(`     -> Deducting ${qtyToDeduct} from ID: ${component.id}`);
+          // Deduct Component Stock
+          console.log(`      - Deducting ${deductQty} x ${comp.name}`);
           await client.post({
             path: 'inventory_levels/adjust',
             data: {
               location_id: locationId,
-              inventory_item_id: component.id,
-              available_adjustment: -qtyToDeduct // Negative number to subtract
+              inventory_item_id: comp.id,
+              available_adjustment: -deductQty 
             },
             type: 'application/json',
           });
+          noteUpdates.push(`${deductQty}x ${comp.name}`);
         }
       }
     }
 
     if (!bundlesFound) {
-      console.log("   - No bundles in this order. Skipping.");
+      console.log("   ✅ No bundles. Skipping.");
       return res.status(200).send();
     }
 
-    // 2. UPDATE ORDER NOTE
-    if (componentsUsed.length > 0) {
-      const noteMessage = `Included Components: ${componentsUsed.join(', ')}`;
-      console.log(`   - Updating Order Note: "${noteMessage}"`);
-      
+    // 3. Update Order Note
+    if (noteUpdates.length > 0) {
+      const noteMessage = `System Deducted: ${noteUpdates.join(', ')}`;
       await client.put({
         path: `orders/${order.id}`,
-        data: { order: { id: order.id, note: noteMessage } }
+        data: { order: { id: order.id, note: noteMessage } },
+        type: 'application/json',
       });
     }
 
-    // 3. RECALCULATE & SYNC ALL BUNDLES
-    // Now that components are gone, we must update the "Available" count for ALL bundles.
-    console.log("   - Syncing Bundle Quantities...");
-    await syncBundleInventory(client, locationId);
+    // 4. Recalculate ALL Bundles
+    await syncAllBundles(client, locationId);
 
     res.status(200).send();
 
   } catch (error) {
-    console.error('❌ Error processing order:', error);
-    res.status(500).send(error.message); // Webhooks will retry if 500 is returned
+    console.error('❌ Automation Error:', error);
+    res.status(500).send(error.message);
   }
 };
 
-// --- HELPER: Recalculate Logic ---
-async function syncBundleInventory(client, locationId) {
-  // 1. Fetch fresh stock levels of the 4 components
-  // We query them all at once
-  const componentIdsStr = Object.values(COMPONENT_IDS).join(',');
-  const stockResponse = await client.get({
+// --- Helper Function ---
+async function syncAllBundles(client, locationId) {
+  console.log("   🔄 Recalculating bundles...");
+  const ids = Object.values(COMPONENT_IDS).join(',');
+  
+  // Get current component stock
+  const response = await client.get({
     path: 'inventory_levels',
-    query: { inventory_item_ids: componentIdsStr, location_ids: locationId }
+    query: { inventory_item_ids: ids, location_ids: locationId }
   });
 
-  const levels = {};
-  stockResponse.body.inventory_levels.forEach(level => {
-    levels[level.inventory_item_id] = level.available;
+  const stockMap = {};
+  response.body.inventory_levels.forEach(level => {
+    stockMap[level.inventory_item_id] = level.available;
   });
 
-  // 2. Calculate Max Available for each Bundle
+  // Calculate limits
   for (const [sku, recipe] of Object.entries(BUNDLE_RECIPES)) {
-    let maxSets = 99999;
-
-    for (const comp of recipe.items) {
-      const availableCompStock = levels[comp.id] || 0;
-      const possibleFromComp = Math.floor(availableCompStock / comp.qty);
-      if (possibleFromComp < maxSets) maxSets = possibleFromComp;
+    let maxSets = 9999;
+    for (const comp of recipe.components) {
+      const available = stockMap[comp.id] || 0;
+      const possible = Math.floor(available / comp.qty);
+      if (possible < maxSets) maxSets = possible;
     }
 
-    // 3. Update Shopify Bundle Quantity
-    // We use 'set' to overwrite the value absolutely
+    // Update Bundle Stock
     await client.post({
       path: 'inventory_levels/set',
       data: {
         location_id: locationId,
-        inventory_item_id: recipe.bundleInventoryId,
+        inventory_item_id: recipe.inventoryItemId,
         available: maxSets
-      }
+      },
+      type: 'application/json',
     });
-    console.log(`     -> Updated ${sku} to ${maxSets}`);
+    console.log(`      -> ${sku}: Set to ${maxSets}`);
   }
 }

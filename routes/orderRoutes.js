@@ -3,11 +3,10 @@ import { getAllOrders, handleOrderCreated } from '../controllers/orderController
 
 const router = express.Router();
 
-// Route for YOU (View orders in browser)
+// View Orders (Browser)
 router.get('/orders', getAllOrders);
 
-// Route for SHOPIFY (Webhook trigger)
-// This is the URL you will paste into Shopify Webhook settings
+// Webhook Listener (Shopify)
 router.post('/webhooks/orders/create', handleOrderCreated);
 
 export default router;
