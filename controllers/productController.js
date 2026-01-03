@@ -1,8 +1,8 @@
-import shopify, { getShopifySession } from '../shopifyConfig.js';
+import shopify, { getSession } from '../shopifyConfig.js';
 
 export const getAllProducts = async (req, res) => {
   try {
-    const session = await getShopifySession();
+    const session = await getSession();
     const client = new shopify.clients.Rest({ session });
 
     // Fetch products (limit 50 to be safe, you can increase to 250)
