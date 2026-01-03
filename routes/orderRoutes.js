@@ -3,7 +3,7 @@ import { getAllOrders, handleOrderCreated } from '../controllers/orderController
 
 const router = express.Router();
 
-// View Orders (Browser)
+// View Orders 
 router.get('/orders', getAllOrders);
 
 // Webhook Listener (Shopify)

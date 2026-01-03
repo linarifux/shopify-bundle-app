@@ -1,7 +1,7 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import productRoutes from './routes/productRoutes.js';
-import orderRoutes from './routes/orderRoutes.js'; // <--- 1. Import this
+import orderRoutes from './routes/orderRoutes.js'; 
 
 dotenv.config();
 
@@ -10,9 +10,9 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
-// Register Routes
+// Routes
 app.use('/api', productRoutes);
-app.use('/api', orderRoutes); // <--- 2. Add this line
+app.use('/api', orderRoutes); 
 
 app.get('/', (req, res) => {
   res.send('Bundle Inventory App is Running');
@@ -20,6 +20,4 @@ app.get('/', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-  console.log(`- Products: http://localhost:${PORT}/api/products`);
-  console.log(`- Orders:   http://localhost:${PORT}/api/orders`); // <--- 3. Update log
 });

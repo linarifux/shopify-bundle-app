@@ -4,7 +4,6 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-// Initialize the library
 const shopify = shopifyApi({
   apiKey: process.env.SHOPIFY_CLIENT_ID,
   apiSecretKey: process.env.SHOPIFY_SECRET,
@@ -15,11 +14,10 @@ const shopify = shopifyApi({
 });
 
 export async function getSession() {
-  // 1. Safety Clean: Remove 'https://' if user accidentally put it in .env
   const shop = process.env.SHOP_URL.replace(/(https?:\/\/)/, '');
   const url = `https://${shop}/admin/oauth/access_token`;
   
-  // 2. Request the token
+  // Request the token
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -30,7 +28,7 @@ export async function getSession() {
     })
   });
 
-  // 3. Better Error Logging (HTML response detection)
+  // Better Error Logging (HTML response detection)
   if (!response.ok) {
     const text = await response.text();
     console.error(`\n❌ API Request Failed! Status: ${response.status}`);
@@ -46,7 +44,7 @@ export async function getSession() {
     throw new Error(`Failed to get token: ${JSON.stringify(data)}`);
   }
 
-  // 4. Return Valid Session
+  // Return Valid Session
   return new Session({
     id: 'offline_' + shop,
     shop: shop,

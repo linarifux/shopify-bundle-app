@@ -1,7 +1,7 @@
 import shopify, { getSession } from '../shopifyConfig.js';
 import { BUNDLE_RECIPES, COMPONENT_IDS } from '../inventoryConfig.js';
 
-// --- PART A: View Orders (Browser) ---
+// View Orders 
 export const getAllOrders = async (req, res) => {
   try {
     const session = await getSession();
@@ -16,7 +16,7 @@ export const getAllOrders = async (req, res) => {
   }
 };
 
-// --- PART B: Automation Logic (Webhook) ---
+// --- Automation Logic (Webhook) ---
 export const handleOrderCreated = async (req, res) => {
   try {
     console.log(`\n📦 New Order Received: ${req.body.name}`);
@@ -24,7 +24,7 @@ export const handleOrderCreated = async (req, res) => {
     const session = await getSession();
     const client = new shopify.clients.Rest({ session });
 
-    // 1. Get Location ID (Required for updates)
+    // 1. Get Location ID 
     const locResponse = await client.get({ path: 'locations' });
     const locationId = locResponse.body.locations[0].id;
 
