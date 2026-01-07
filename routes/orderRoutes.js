@@ -1,5 +1,5 @@
 import express from 'express';
-import { getAllOrders, handleOrderCreated } from '../controllers/orderController.js';
+import { getAllOrders, handleOrderCancelled, handleOrderCreated } from '../controllers/orderController.js';
 
 const router = express.Router();
 
@@ -8,5 +8,6 @@ router.get('/orders', getAllOrders);
 
 // Webhook Listener (Shopify)
 router.post('/webhooks/orders/create', handleOrderCreated);
+router.post('/webhooks/orders/cancelled', handleOrderCancelled); // <--- Add this route
 
 export default router;
