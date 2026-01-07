@@ -1,7 +1,8 @@
 import shopify, { getSession } from '../shopifyConfig.js';
-import { BUNDLE_RECIPES, COMPONENT_IDS } from '../inventoryConfig.js';
+import { BUNDLE_RECIPES } from '../inventoryConfig.js'; 
+import { syncAllBundles } from '../utils/inventorySync.js'; 
 
-// View Orders 
+// --- View Orders ---
 export const getAllOrders = async (req, res) => {
   try {
     const session = await getSession();
@@ -16,10 +17,10 @@ export const getAllOrders = async (req, res) => {
   }
 };
 
-// --- Automation Logic (Webhook) ---
+// --- Automation Logic (Order Created) ---
 export const handleOrderCreated = async (req, res) => {
   try {
-    console.log(`\n New Order Received: ${req.body.name}`);
+    console.log(`\n📦 New Order Received: ${req.body.name}`);
     const order = req.body;
     const session = await getSession();
     const client = new shopify.clients.Rest({ session });
@@ -74,7 +75,7 @@ export const handleOrderCreated = async (req, res) => {
       });
     }
 
-    // 4. Recalculate ALL Bundles
+    // 4. Recalculate ALL Bundles (Using Shared Logic)
     await syncAllBundles(client, locationId);
 
     res.status(200).send();
@@ -85,46 +86,7 @@ export const handleOrderCreated = async (req, res) => {
   }
 };
 
-// --- Helper Function ---
-async function syncAllBundles(client, locationId) {
-  console.log("   🔄 Recalculating bundles...");
-  const ids = Object.values(COMPONENT_IDS).join(',');
-  
-  // Get current component stock
-  const response = await client.get({
-    path: 'inventory_levels',
-    query: { inventory_item_ids: ids, location_ids: locationId }
-  });
-
-  const stockMap = {};
-  response.body.inventory_levels.forEach(level => {
-    stockMap[level.inventory_item_id] = level.available;
-  });
-
-  // Calculate limits
-  for (const [sku, recipe] of Object.entries(BUNDLE_RECIPES)) {
-    let maxSets = 9999;
-    for (const comp of recipe.components) {
-      const available = stockMap[comp.id] || 0;
-      const possible = Math.floor(available / comp.qty);
-      if (possible < maxSets) maxSets = possible;
-    }
-
-    // Update Bundle Stock
-    await client.post({
-      path: 'inventory_levels/set',
-      data: {
-        location_id: locationId,
-        inventory_item_id: recipe.inventoryItemId,
-        available: maxSets
-      },
-      type: 'application/json',
-    });
-    console.log(`      -> ${sku}: Set to ${maxSets}`);
-  }
-}
-
-
+// --- Automation Logic (Order Cancelled) ---
 export const handleOrderCancelled = async (req, res) => {
   try {
     console.log(`\n🚫 Order Cancelled: ${req.body.name}`);
@@ -181,8 +143,7 @@ export const handleOrderCancelled = async (req, res) => {
       });
     }
 
-    // 4. Recalculate ALL Bundles
-    // (This is crucial: It overwrites Shopify's simple restock with the real "max available" math)
+    // 4. Recalculate ALL Bundles (Using Shared Logic)
     await syncAllBundles(client, locationId);
 
     res.status(200).send();

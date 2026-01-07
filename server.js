@@ -2,6 +2,7 @@ import express from 'express';
 import dotenv from 'dotenv';
 import productRoutes from './routes/productRoutes.js';
 import orderRoutes from './routes/orderRoutes.js'; 
+import inventoryRoutes from './routes/inventoryRoutes.js'; 
 
 dotenv.config();
 
@@ -13,6 +14,7 @@ app.use(express.json());
 // Routes
 app.use('/api', productRoutes);
 app.use('/api', orderRoutes); 
+app.use('/api', inventoryRoutes); 
 
 app.get('/', (req, res) => {
   res.send('Bundle Inventory App is Running');
